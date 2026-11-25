@@ -1,0 +1,991 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PairChat</title>
+<meta name="description" content="Private chat between 2-3 devices, paired with a 6-digit code. No phone number, no account, no IP address. Works offline on your own Wi-Fi.">
+<meta name="theme-color" content="#0b0d24">
+<!-- Bundled locally so the app also works with no internet (see serve.py):
+     PeerJS 1.5.4 = WebRTC peer-to-peer data channels; qrcode-generator 1.4.4 = invite QR codes -->
+<script src="vendor/peerjs.min.js"></script>
+<script src="vendor/qrcode.js"></script>
+<style>
+  @font-face {
+    font-family: "Inter var"; font-style: normal; font-weight: 100 900; font-display: swap;
+    src: url("vendor/inter-var.woff2") format("woff2");
+  }
+  :root {
+    --bg: #070818; --bg-2: #0d1034;
+    --panel: rgba(22, 25, 58, .58); --panel-solid: #15183c; --panel-hi: rgba(255,255,255,.06);
+    --line: rgba(255,255,255,.09); --line-strong: rgba(255,255,255,.16);
+    --text: #eef0ff; --muted: #9ca2cc; --faint: #6d73a3;
+    --a1: #7c5cff; --a2: #4f8bff; --a3: #22d3ee; --a4: #f472b6;
+    --grad: linear-gradient(135deg, var(--a1) 0%, var(--a2) 55%, var(--a3) 100%);
+    --theirs: rgba(255,255,255,.07); --theirs-text: #eef0ff;
+    --ok: #34d399; --danger: #fb7185;
+    --shadow: 0 20px 60px rgba(0, 0, 0, .45);
+    --glow: 0 10px 30px rgba(124, 92, 255, .35);
+    --blob-o: .55;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f4f5ff; --bg-2: #e9ecff;
+      --panel: rgba(255, 255, 255, .7); --panel-solid: #ffffff; --panel-hi: rgba(20, 24, 80, .04);
+      --line: rgba(20, 24, 80, .09); --line-strong: rgba(20, 24, 80, .16);
+      --text: #12143a; --muted: #5a5f8f; --faint: #8b90b8;
+      --theirs: #ffffff; --theirs-text: #12143a;
+      --ok: #059669; --danger: #e11d48;
+      --shadow: 0 20px 50px rgba(40, 50, 120, .14);
+      --glow: 0 10px 26px rgba(124, 92, 255, .28);
+      --blob-o: .35;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(1200px 800px at 10% -10%, var(--bg-2), transparent 60%), var(--bg);
+    color: var(--text); -webkit-font-smoothing: antialiased;
+    font: 15px/1.5 "Inter var", Inter, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  .hidden { display: none !important; }
+  svg { display: block; }
+
+  /* ---------- animated aurora background ---------- */
+  .aurora { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+  .aurora i { position: absolute; border-radius: 50%; filter: blur(80px); opacity: var(--blob-o); animation: drift 22s ease-in-out infinite alternate; }
+  .aurora i:nth-child(1) { width: 520px; height: 520px; background: var(--a1); top: -140px; left: -120px; }
+  .aurora i:nth-child(2) { width: 440px; height: 440px; background: var(--a3); bottom: -160px; right: -100px; animation-delay: -7s; }
+  .aurora i:nth-child(3) { width: 360px; height: 360px; background: var(--a4); top: 40%; left: 55%; opacity: calc(var(--blob-o) * .6); animation-delay: -14s; }
+  @keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(60px, 40px) scale(1.15); } }
+  @media (prefers-reduced-motion: reduce) { .aurora i, .msg, .overlay .card { animation: none !important; } }
+
+  /* ---------- controls ---------- */
+  button {
+    font: inherit; font-weight: 600; border: 0; border-radius: 14px; padding: 12px 18px; cursor: pointer;
+    color: #fff; background: var(--grad); box-shadow: var(--glow);
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    transition: transform .15s ease, box-shadow .2s ease, opacity .2s, background .2s;
+  }
+  button:hover:not(:disabled) { transform: translateY(-1px); }
+  button:active:not(:disabled) { transform: translateY(0) scale(.98); }
+  button.ghost { background: var(--panel-hi); color: var(--text); border: 1px solid var(--line-strong); box-shadow: none; }
+  button.ghost:hover:not(:disabled) { border-color: var(--a1); }
+  button.danger { background: transparent; color: var(--danger); border: 1px solid var(--line-strong); box-shadow: none; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--a3); outline-offset: 2px; }
+  input, select {
+    font: inherit; color: var(--text); background: var(--panel-hi); border: 1px solid var(--line-strong);
+    border-radius: 14px; padding: 12px 14px; width: 100%; outline: none; transition: border-color .2s, box-shadow .2s;
+  }
+  input::placeholder { color: var(--faint); }
+  input:focus { border-color: var(--a1); box-shadow: 0 0 0 4px rgba(124, 92, 255, .18); }
+
+  .logo { width: 38px; height: 38px; border-radius: 12px; background: var(--grad); display: grid; place-items: center; box-shadow: var(--glow); flex: none; }
+  .logo svg { width: 22px; height: 22px; }
+  .glass { background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(22px) saturate(140%); -webkit-backdrop-filter: blur(22px) saturate(140%); box-shadow: var(--shadow); }
+  .grad-text { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  /* ---------- Home ---------- */
+  #home { position: relative; min-height: 100dvh; display: flex; flex-direction: column; }
+  .topbar { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 28px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; letter-spacing: -.01em; }
+  .badge { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 6px 12px; background: var(--panel); border: 1px solid var(--line); color: var(--muted); backdrop-filter: blur(10px); }
+  .badge.local { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+  .hero-wrap { position: relative; z-index: 1; flex: 1; width: 100%; max-width: 1120px; margin: 0 auto; padding: 24px 28px 48px;
+               display: grid; grid-template-columns: 1.1fr .9fr; gap: 56px; align-items: center; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--a3); }
+  .eyebrow::before { content: ""; width: 22px; height: 2px; border-radius: 2px; background: var(--grad); }
+  h1 { font-size: clamp(32px, 5vw, 56px); line-height: 1.05; letter-spacing: -.035em; margin: 14px 0 16px; font-weight: 800; }
+  .lead { font-size: 17px; color: var(--muted); max-width: 520px; margin: 0 0 28px; }
+  .features { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 540px; }
+  .features li { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(12px); }
+  .fi { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex: none; background: rgba(124, 92, 255, .16); color: var(--a1); }
+  .features li:nth-child(2) .fi { background: rgba(34, 211, 238, .14); color: var(--a3); }
+  .features li:nth-child(3) .fi { background: rgba(244, 114, 182, .14); color: var(--a4); }
+  .features li:nth-child(4) .fi { background: rgba(79, 139, 255, .16); color: var(--a2); }
+  .fi svg { width: 18px; height: 18px; }
+  .features b { display: block; font-size: 14px; }
+  .features small { color: var(--muted); font-size: 12.5px; }
+
+  .join-card { border-radius: 26px; padding: 28px; }
+  .join-card h2 { margin: 0 0 4px; font-size: 22px; letter-spacing: -.02em; }
+  .join-card .sub { margin: 0 0 18px; color: var(--muted); font-size: 14px; }
+  label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 0 0 8px; letter-spacing: .02em; }
+  .full { width: 100%; margin-top: 14px; }
+  .divider { display: flex; align-items: center; gap: 12px; color: var(--faint); font-size: 12px; margin: 22px 0 14px; text-transform: uppercase; letter-spacing: .08em; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line-strong); }
+  #codeInput { letter-spacing: .55em; font-size: 26px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; padding: 14px 12px 14px calc(12px + .55em); }
+  #invited { margin-top: 14px; padding: 12px 14px; border-radius: 14px; font-size: 13.5px; border: 1px solid color-mix(in srgb, var(--a1) 55%, transparent); background: rgba(124, 92, 255, .1); }
+  #status { min-height: 22px; margin-top: 14px; font-size: 13.5px; color: var(--muted); text-align: center; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  #status.err { color: var(--danger); }
+  #status.busy::before { content: ""; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--a3); animation: spin .8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .fine { margin: 16px 0 0; font-size: 12px; color: var(--faint); text-align: center; }
+  .site-foot { position: relative; z-index: 1; text-align: center; color: var(--faint); font-size: 12px; padding: 0 16px 22px; }
+
+  @media (max-width: 900px) {
+    .hero-wrap { grid-template-columns: 1fr; gap: 28px; padding-top: 4px; max-width: 560px; }
+    .lead { font-size: 15.5px; margin-bottom: 18px; }
+  }
+  @media (max-width: 900px) {
+    /* Opened from an invite link on a phone: show the join card first */
+    #home.invited .join-card { order: -1; }
+    #home.invited .features, #home.invited .lead { display: none; }
+    #home.invited h1 { font-size: 26px; margin: 18px 0 0; }
+  }
+  @media (max-width: 520px) {
+    .topbar { padding: 14px 16px; }
+    .hero-wrap { padding: 4px 16px 28px; }
+    .features { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .features li { padding: 10px; gap: 8px; }
+    .features small { display: none; }
+    .join-card { padding: 22px 18px; border-radius: 22px; }
+  }
+
+  /* ---------- Chat ---------- */
+  #chat { position: relative; height: 100dvh; }
+  .chat-shell { position: relative; z-index: 1; height: 100%; max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; }
+  @media (min-width: 700px) { .chat-shell { height: calc(100dvh - 40px); top: 20px; border-radius: 28px; overflow: hidden; } }
+  .chat-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel-hi); }
+  .room { flex: 1; min-width: 0; }
+  .room .t { font-weight: 700; display: flex; align-items: center; gap: 8px; font-size: 15px; }
+  .code-pill { font-variant-numeric: tabular-nums; letter-spacing: .18em; background: var(--grad); color: #fff; border-radius: 999px; padding: 2px 10px 2px 12px; font-size: 13px; cursor: pointer; box-shadow: var(--glow); }
+  .room .m { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .avatars { display: flex; }
+  .avatars .avatar { margin-left: -8px; border: 2px solid var(--panel-solid); }
+  .actions { display: flex; gap: 6px; }
+  .actions button { padding: 8px 12px; font-size: 13px; border-radius: 12px; }
+  .lock-on { color: var(--danger) !important; border-color: var(--danger) !important; }
+  @media (max-width: 560px) { .avatars { display: none; } .actions button { padding: 7px 10px; } .chat-head { gap: 8px; padding: 10px 12px; } .chat-head .logo { display: none; } }
+
+  .avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff; flex: none; text-transform: uppercase; }
+
+  #messages { flex: 1; overflow-y: auto; padding: 20px 18px 8px; display: flex; flex-direction: column; gap: 8px; scroll-behavior: smooth; }
+  .sys { align-self: center; font-size: 12px; color: var(--muted); background: var(--panel-hi); border: 1px solid var(--line); border-radius: 999px; padding: 4px 14px; margin: 6px 0; text-align: center; max-width: 90%; }
+  .msg { display: flex; gap: 8px; max-width: 80%; align-self: flex-start; align-items: flex-end; animation: pop .22s ease-out; }
+  .msg .body { display: flex; flex-direction: column; min-width: 0; }
+  .msg.mine { align-self: flex-end; }
+  .msg.mine .body { align-items: flex-end; }
+  @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+  .who { font-size: 12px; font-weight: 600; color: var(--muted); margin: 0 0 3px 10px; }
+  .bubble { background: var(--theirs); color: var(--theirs-text); border: 1px solid var(--line); border-radius: 20px 20px 20px 6px; padding: 9px 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .mine .bubble { background: var(--grad); color: #fff; border: 0; border-radius: 20px 20px 6px 20px; box-shadow: var(--glow); }
+  .bubble img { display: block; max-width: 100%; max-height: 300px; border-radius: 14px; }
+  .bubble a { color: inherit; font-weight: 600; text-decoration: none; }
+  .bubble a:hover { text-decoration: underline; }
+  .meta { font-size: 11px; color: var(--faint); margin: 3px 10px 0; }
+  .tick.ok { color: var(--ok); }
+
+  #typing { height: 20px; padding: 0 22px; font-size: 12px; color: var(--muted); font-style: italic; }
+  .composer { display: flex; gap: 10px; align-items: center; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--panel-hi); }
+  .composer input[type=text] { flex: 1; border-radius: 999px; padding: 13px 18px; }
+  .icon-btn { width: 46px; height: 46px; padding: 0; border-radius: 50%; flex: none; }
+  .icon-btn svg { width: 20px; height: 20px; }
+
+  /* ---------- overlays + toast ---------- */
+  .overlay { position: fixed; inset: 0; background: rgba(5, 6, 20, .55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: grid; place-items: center; padding: 16px; }
+  .overlay .card { width: 100%; max-width: 380px; text-align: center; border-radius: 26px; padding: 26px 24px; animation: rise .22s ease-out; background: var(--panel-solid); border: 1px solid var(--line); box-shadow: var(--shadow); }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+  .overlay h2 { margin: 0 0 6px; font-size: 19px; letter-spacing: -.01em; }
+  .overlay p { color: var(--muted); margin: 0 0 18px; }
+  .overlay .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  #modal { z-index: 10; }
+  #modal .ring { width: 56px; height: 56px; margin: 0 auto 12px; border-radius: 50%; background: var(--grad); display: grid; place-items: center; box-shadow: var(--glow); }
+  #modal .ring svg { width: 26px; height: 26px; }
+  #invite { z-index: 9; }
+  .big-code { font-size: 36px; font-weight: 800; letter-spacing: .22em; font-variant-numeric: tabular-nums; margin: 2px 0 12px; padding-left: .22em; }
+  #qrBox { background: #fff; border-radius: 18px; padding: 10px; display: inline-block; line-height: 0; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+  #qrBox img { width: 210px; height: 210px; image-rendering: pixelated; }
+  #inviteLink { font-size: 12px; color: var(--muted); word-break: break-all; margin: 10px 0; user-select: all; }
+  #inviteWarn { font-size: 12px; color: var(--danger); margin: 0 0 10px; }
+  #addrSelect { width: auto; font-size: 12px; margin-top: 10px; padding: 5px 10px; border-radius: 999px; }
+  .steps { text-align: left; font-size: 13px; color: var(--muted); margin: 6px 0 16px; padding-left: 20px; }
+  .steps li { margin: 3px 0; }
+  .steps b { color: var(--text); }
+  #toast {
+    position: fixed; left: 50%; bottom: 96px; transform: translate(-50%, 8px); background: var(--panel-solid); color: var(--text);
+    border: 1px solid var(--line-strong); box-shadow: var(--shadow); padding: 10px 16px; border-radius: 999px; font-size: 13px;
+    opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 20;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+
+<!-- ================= HOME ================= -->
+<div id="home">
+  <div class="aurora"><i></i><i></i><i></i></div>
+  <nav class="topbar">
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg></div>
+      PairChat
+    </div>
+    <span class="badge" id="modeBadge">Online mode</span>
+  </nav>
+
+  <main class="hero-wrap">
+    <section class="hero">
+      <span class="eyebrow">Private · Peer-to-peer · No sign-up</span>
+      <h1>Chat across your devices.<br><span class="grad-text">No numbers. No cloud.</span></h1>
+      <p class="lead">Pair 2–3 phones or laptops with a 6-digit code and talk directly — over the internet, or on your own Wi-Fi with no internet at all.</p>
+      <ul class="features">
+        <li><span class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><div><b>Encrypted</b><small>Device-to-device, never stored</small></div></li>
+        <li><span class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5 5 0 0 1 7 0"/><path d="M2 9a15 15 0 0 1 20 0"/><circle cx="12" cy="19.5" r="1"/></svg></span><div><b>Works offline</b><small>Same Wi-Fi or a phone hotspot</small></div></li>
+        <li><span class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg></span><div><b>OTP pairing</b><small>6-digit code + host approval</small></div></li>
+        <li><span class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 11-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2L9.8 17a1.8 1.8 0 0 1-2.6-2.6l8-8"/></svg></span><div><b>Photos &amp; files</b><small>Up to 8 MB each</small></div></li>
+      </ul>
+    </section>
+
+    <section class="join-card glass">
+      <h2>Get started</h2>
+      <p class="sub">Create a room on one device, then join from the others.</p>
+
+      <label for="nameInput">Your display name</label>
+      <input id="nameInput" maxlength="24" placeholder="e.g. Asha's laptop" autocomplete="off">
+      <button id="createBtn" class="full">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        Create a room
+      </button>
+
+      <div class="divider">or join with a code</div>
+      <input id="codeInput" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" aria-label="6-digit room code">
+      <button id="joinBtn" class="full ghost">
+        Join room
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+      <div id="invited" class="hidden"></div>
+
+      <div id="status"></div>
+      <p class="fine">Messages go device-to-device and are never stored on a server.</p>
+    </section>
+  </main>
+  <div class="site-foot">PairChat · no phone number · no account · no IP address</div>
+</div>
+
+<!-- ================= CHAT ================= -->
+<div id="chat" class="hidden">
+  <div class="aurora"><i></i><i></i><i></i></div>
+  <div class="chat-shell glass">
+    <header class="chat-head">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg></div>
+      <div class="room">
+        <div class="t">Room <span class="code-pill" id="codePill" title="Show invite"></span></div>
+        <div class="m" id="membersLine"></div>
+      </div>
+      <div class="avatars" id="avatars"></div>
+      <div class="actions">
+        <button id="inviteBtn" title="Share a link / QR code to join">Invite</button>
+        <button id="lockBtn" class="ghost hidden" title="Stop new devices from joining">Lock</button>
+        <button id="rejoinBtn" class="ghost hidden">Rejoin</button>
+        <button id="leaveBtn" class="danger">Leave</button>
+      </div>
+    </header>
+    <div id="messages"></div>
+    <div id="typing"></div>
+    <footer class="composer">
+      <button id="attachBtn" class="icon-btn ghost" title="Send a photo or file" aria-label="Attach a file">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 11-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2L9.8 17a1.8 1.8 0 0 1-2.6-2.6l8-8"/></svg>
+      </button>
+      <input type="file" id="fileInput" class="hidden">
+      <input type="text" id="msgInput" placeholder="Type a message…" autocomplete="off" maxlength="4000">
+      <button id="sendBtn" class="icon-btn" title="Send" aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
+      </button>
+    </footer>
+  </div>
+</div>
+
+<div id="modal" class="overlay hidden">
+  <div class="card">
+    <div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M19 8v6M16 11h6"/></svg></div>
+    <h2>Join request</h2>
+    <p id="modalText"></p>
+    <div class="row">
+      <button id="rejectBtn" class="danger">Decline</button>
+      <button id="acceptBtn">Accept</button>
+    </div>
+  </div>
+</div>
+
+<div id="invite" class="overlay hidden">
+  <div class="card">
+    <h2>Invite a device</h2>
+    <div class="big-code" id="inviteCode"></div>
+    <div id="qrBox"></div>
+    <div><select id="addrSelect" class="hidden" title="Pick the network the other device is on"></select></div>
+    <div id="inviteLink"></div>
+    <p id="inviteWarn" class="hidden"></p>
+    <ol class="steps">
+      <li>On the phone or laptop, <b>scan the QR code</b> with the camera, or open the link.</li>
+      <li>The code fills in by itself. Enter a name and tap <b>Join room</b>.</li>
+      <li>Tap <b>Accept</b> here when the request pops up.</li>
+    </ol>
+    <div class="row">
+      <button id="copyLinkBtn" class="ghost">Copy link</button>
+      <button id="shareBtn" class="ghost hidden">Share…</button>
+      <button id="inviteClose">Done</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+/* ===================== Config ===================== */
+const APP_PREFIX  = 'pairchat-v1-';  // namespaces our room IDs on the shared PeerJS broker
+const MAX_DEVICES = 3;               // host + 2 guests ("two or three devices")
+const MAX_FILE_MB = 8;
+const JOIN_TIMEOUT_MS = 90000;       // includes time for the host to tap "Accept"
+
+/* ===================== State ===================== */
+let peer = null;            // our PeerJS identity
+let myId = null;            // our member id (guests learn it from the host's welcome)
+let HUB = null;             // set when served by serve.py: {local:true, lanUrls:[...]}
+let role = null;            // 'host' | 'guest'
+let roomCode = null;
+let myName = '';
+let locked = false;
+let joined = false;         // guest: approved by host
+let members = [];           // [{id, name, host}]
+const guests  = new Map();  // host only: peerId -> {conn, name}
+const pending = new Map();  // host only: peerId -> {conn, name}   (awaiting approval)
+const approvalQueue = [];   // host only: peerIds waiting for the modal
+let hostConn = null;        // guest only: connection to the host
+let joinTimer = null;
+
+/* ===================== Helpers ===================== */
+const $ = s => document.querySelector(s);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const cleanName = n => String(n || '').replace(/\s+/g, ' ').trim().slice(0, 24) || 'Guest';
+const fmtTime = ts => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.ceil(b / 1024) + ' KB';
+function genCode() { const a = new Uint32Array(1); crypto.getRandomValues(a); return String(a[0] % 1000000).padStart(6, '0'); }
+
+function store(key, val) { try { localStorage.setItem(key, val); } catch (_) {} }
+function load(key) { try { return localStorage.getItem(key) || ''; } catch (_) { return ''; } }
+
+function setStatus(text, isErr) {
+  const s = $('#status'); s.textContent = text || '';
+  s.classList.toggle('err', !!isErr);
+  s.classList.toggle('busy', !isErr && /…$/.test(text || ''));   // spinner while waiting
+}
+
+// Colourful initials avatar; the colour is stable per name.
+function avatarEl(name) {
+  const n = cleanName(name);
+  let h = 0; for (const ch of n) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  const hue = h % 360;
+  const initials = n.split(' ').filter(Boolean).slice(0, 2).map(w => [...w][0]).join('') || '?';
+  const a = el('div', 'avatar', initials);
+  a.style.background = `linear-gradient(135deg, hsl(${hue} 75% 58%), hsl(${(hue + 40) % 360} 80% 48%))`;
+  a.title = n;
+  return a;
+}
+let toastTimer;
+function toast(text) { const t = $('#toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1800); }
+
+function getName() {
+  const n = $('#nameInput').value.trim();
+  if (!n) { setStatus('Enter a display name first.', true); $('#nameInput').focus(); return null; }
+  store('pairchat-name', n);
+  return cleanName(n);
+}
+
+/* ===================== Online vs offline (local hub) ===================== */
+// When serve.py is serving this page it answers /pairchat-local.json, and we pair through
+// it instead of the PeerJS cloud — so no internet is needed, only the same Wi-Fi/hotspot.
+const hubReady = fetch('pairchat-local.json', { cache: 'no-store' })
+  .then(r => r.ok ? r.json() : null)
+  .then(j => { if (j && j.local) HUB = j; })
+  .catch(() => {})
+  .finally(updateBadge);
+
+function updateBadge() {
+  const b = $('#modeBadge');
+  if (HUB) { b.textContent = '● Offline mode — pairing through this Wi-Fi, no internet needed'; b.classList.add('local'); }
+  else if (!navigator.onLine) b.textContent = '○ No internet — run serve.py on a laptop for offline mode';
+  else b.textContent = '● Online mode';
+}
+
+function peerOptions() {
+  if (!HUB) return { debug: 1 };
+  const secure = location.protocol === 'https:';
+  return { host: location.hostname, port: Number(location.port) || (secure ? 443 : 80), path: '/', secure,
+           config: { iceServers: [] }, debug: 1 };   // LAN only: no STUN/TURN lookups
+}
+
+/* ===================== Hub relay fallback ===================== */
+// Offline mode tries a direct WebRTC link first. Some networks (phone hotspots, Wi-Fi with
+// client isolation) block it; then the chat is carried over the hub's WebSocket instead.
+// The traffic still never leaves your local network. Add ?relay to the URL to force it.
+const FORCE_RELAY = /[?&]relay\b/.test(location.search);
+const DIRECT_TIMEOUT_MS = 6000;
+const relayConns = new Map();   // remote peer id -> RelayConn
+let fallbackTimer = null;
+
+function toB64(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function fromB64(b64) { const s = atob(b64); const out = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i); return out; }
+
+// Looks like a PeerJS DataConnection (peer, open, on, send, close) so the chat code can't tell the difference.
+class RelayConn {
+  constructor(remoteId) { this.peer = remoteId; this.open = false; this.closed = false; this.h = {}; this.rx = new Map(); relayConns.set(remoteId, this); }
+  on(ev, cb) { (this.h[ev] = this.h[ev] || []).push(cb); return this; }
+  emit(ev, arg) { (this.h[ev] || []).forEach(f => { try { f(arg); } catch (e) { console.error(e); } }); }
+  markOpen() { if (!this.open && !this.closed) { this.open = true; this.emit('open'); } }
+  raw(payload) { if (peer && peer.socket) peer.socket.send({ type: 'RELAY', dst: this.peer, payload }); }
+  send(obj) {
+    if (!this.open) return;
+    if (obj && obj.type === 'file' && obj.data) return this.sendFile(obj);
+    this.raw(obj);
+  }
+  sendFile(obj) {
+    const { data, ...meta } = obj;
+    const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    const CH = 384 * 1024, total = Math.max(1, Math.ceil(bytes.length / CH));
+    for (let i = 0; i < total; i++)
+      this.raw({ type: 'chunk', fid: meta.id, i, total, meta: i === 0 ? meta : undefined, b64: toB64(bytes.subarray(i * CH, (i + 1) * CH)) });
+  }
+  receive(p) {
+    if (!p || typeof p !== 'object') return;
+    if (p.type === 'bye') return this.gone();
+    if (p.type !== 'chunk') return this.emit('data', p);
+    let r = this.rx.get(p.fid);
+    if (!r) { r = { parts: [], got: 0, meta: null }; this.rx.set(p.fid, r); }
+    if (p.meta) r.meta = p.meta;
+    if (!r.parts[p.i]) { r.parts[p.i] = fromB64(p.b64 || ''); r.got++; }
+    if (r.got === p.total && r.meta) {
+      this.rx.delete(p.fid);
+      const out = new Uint8Array(r.parts.reduce((n, a) => n + a.length, 0));
+      let o = 0; r.parts.forEach(a => { out.set(a, o); o += a.length; });
+      this.emit('data', { ...r.meta, data: out.buffer });
+    }
+  }
+  close() { if (this.closed) return; try { this.raw({ type: 'bye' }); } catch (_) {} this.gone(); }
+  gone() { if (this.closed) return; this.closed = true; this.open = false; relayConns.delete(this.peer); this.emit('close'); }
+}
+
+function onHubMessage(m) {
+  if (!m || typeof m !== 'object') return;
+  if (m.type === 'RELAY') {
+    let c = relayConns.get(m.src);
+    if (!c) {
+      // A device that couldn't connect directly is knocking via the hub.
+      if (role !== 'host' || !m.payload || m.payload.type !== 'hello') return;
+      c = new RelayConn(m.src);
+      onIncoming(c);
+      c.markOpen();
+    }
+    c.receive(m.payload);
+  } else if (m.type === 'RELAY-GONE' || m.type === 'RELAY-FAIL') {
+    const c = relayConns.get(m.src);
+    if (c) c.gone();
+  }
+}
+
+function useRelayToHost() {
+  clearTimeout(fallbackTimer);
+  if (role !== 'guest' || joined) return;
+  const old = hostConn;
+  if (old && !(old instanceof RelayConn)) { try { old.removeAllListeners(); old.close(); } catch (_) {} }
+  hostConn = new RelayConn(APP_PREFIX + roomCode);
+  hostConn.on('data', guestHandle).on('close', onHostGone);
+  hostConn.markOpen();
+  hostConn.send({ type: 'hello', name: myName });
+  setStatus('Connected through the laptop hub — waiting for the host to accept you…');
+}
+
+/* ===================== Invite / share link ===================== */
+const isLoopback = h => h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
+
+function inviteBase() {
+  if (HUB && isLoopback(location.hostname) && HUB.lanUrls && HUB.lanUrls.length) {
+    const sel = $('#addrSelect');
+    return sel.value || HUB.lanUrls[0];
+  }
+  if (location.protocol.startsWith('http')) return location.origin + location.pathname;
+  return null;
+}
+
+function inviteLink() { const b = inviteBase(); return b ? `${b}#${roomCode}` : null; }
+
+function openInvite() {
+  $('#inviteCode').textContent = roomCode;
+  // Address picker: only when the laptop has several networks (Wi-Fi + hotspot + VPN…)
+  const sel = $('#addrSelect');
+  const showSel = !!(HUB && isLoopback(location.hostname) && HUB.lanUrls && HUB.lanUrls.length > 1);
+  if (showSel && !sel.options.length) HUB.lanUrls.forEach(u => sel.append(new Option(u.replace(/^http:\/\/|\/$/g, ''), u)));
+  sel.classList.toggle('hidden', !showSel);
+  renderInvite();
+  $('#shareBtn').classList.toggle('hidden', !navigator.share);
+  $('#invite').classList.remove('hidden');
+}
+
+function renderInvite() {
+  const link = inviteLink();
+  const warn = $('#inviteWarn');
+  const box = $('#qrBox');
+  box.innerHTML = '';
+  $('#inviteLink').textContent = link || 'No shareable link — share the code instead.';
+  let w = '';
+  if (!link) w = 'Opened as a file, so there is no link to share. Run serve.py or host the folder online.';
+  else if (isLoopback(new URL(link).hostname)) w = 'This link only works on this computer. To invite phones, run serve.py (same Wi-Fi) or host the folder online.';
+  else if (HUB && isLoopback(location.hostname) && !HUB.lanUrls.length) w = 'This computer is not on any network. Connect to Wi-Fi or a phone hotspot.';
+  warn.textContent = w; warn.classList.toggle('hidden', !w);
+  if (link && typeof qrcode !== 'undefined') {
+    const qr = qrcode(0, 'M'); qr.addData(link); qr.make();
+    const img = el('img'); img.src = qr.createDataURL(6, 2); img.alt = 'QR code for the invite link';
+    box.append(img);
+  }
+  box.classList.toggle('hidden', !box.childNodes.length);
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (_) {}
+  // Fallback for plain-http pages (e.g. http://192.168.x.x), where the clipboard API is blocked
+  const ta = el('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.append(ta); ta.select();
+  let ok = false; try { ok = document.execCommand('copy'); } catch (_) {}
+  ta.remove();
+  return ok;
+}
+
+/* ===================== Screens ===================== */
+function enterChat() {
+  clearTimeout(joinTimer);
+  $('#home').classList.add('hidden');
+  $('#chat').classList.remove('hidden');
+  $('#codePill').textContent = roomCode;
+  $('#lockBtn').classList.toggle('hidden', role !== 'host');
+  $('#rejoinBtn').classList.add('hidden');
+  setComposer(true);
+  renderMembers();
+  $('#msgInput').focus();
+}
+
+function backHome(statusText, isErr) {
+  clearTimeout(joinTimer);
+  const keepCode = role === 'guest' ? roomCode : null;   // so "try again" is one tap
+  teardown();
+  if (keepCode) $('#codeInput').value = keepCode;
+  $('#chat').classList.add('hidden');
+  $('#home').classList.remove('hidden');
+  $('#messages').innerHTML = '';
+  $('#modal').classList.add('hidden');
+  setBusy(false);
+  setStatus(statusText || '', isErr);
+}
+
+function teardown() {
+  clearTimeout(fallbackTimer);
+  const wasRole = role;
+  role = null;                                   // so close events below don't re-enter backHome
+  try { if (hostConn) hostConn.close(); } catch (_) {}
+  if (wasRole === 'host') [...guests.values()].forEach(g => { try { g.conn.close(); } catch (_) {} });
+  [...relayConns.values()].forEach(c => c.gone());
+  try { if (peer && !peer.destroyed) peer.destroy(); } catch (_) {}
+  peer = null; hostConn = null; role = null; joined = false; locked = false; myId = null;
+  $('#invite').classList.add('hidden');
+  members = []; guests.clear(); pending.clear(); approvalQueue.length = 0;
+  $('#lockBtn').textContent = 'Lock'; $('#lockBtn').classList.remove('lock-on');
+}
+
+function setBusy(b) { $('#createBtn').disabled = b; $('#joinBtn').disabled = b; }
+function setComposer(on) { ['#msgInput', '#sendBtn', '#attachBtn'].forEach(s => $(s).disabled = !on); }
+
+function renderMembers() {
+  const names = members.map(m => m.name + (m.id === myId ? ' (you)' : '') + (m.host ? ' ★' : ''));
+  $('#membersLine').textContent = `${members.length}/${MAX_DEVICES} devices · ${names.join(', ')}`;
+  const av = $('#avatars'); av.innerHTML = '';
+  members.forEach(m => av.append(avatarEl(m.name)));
+}
+
+/* ===================== Rendering ===================== */
+function sys(text) {
+  const box = $('#messages');
+  box.append(el('div', 'sys', text));
+  box.scrollTop = box.scrollHeight;
+}
+
+function showMessage(m, mine) {
+  const box = $('#messages');
+  const row = el('div', 'msg' + (mine ? ' mine' : ''));
+  row.dataset.id = m.id;
+  if (!mine) row.append(avatarEl(m.name));
+  const body = el('div', 'body');
+  if (!mine) body.append(el('div', 'who', cleanName(m.name)));
+  const bubble = el('div', 'bubble');
+
+  if (m.type === 'msg') {
+    bubble.textContent = String(m.text || '');
+  } else if (m.type === 'file') {
+    const blob = new Blob([m.data], { type: m.mime || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    if (/^image\//.test(m.mime || '')) {
+      const img = el('img'); img.src = url; img.alt = m.fileName || 'image';
+      const a = el('a'); a.href = url; a.download = m.fileName || 'image'; a.append(img);
+      bubble.append(a);
+    } else {
+      const a = el('a', null, `📎 ${m.fileName || 'file'} (${fmtSize(m.size || blob.size)})`);
+      a.href = url; a.download = m.fileName || 'file';
+      bubble.append(a);
+    }
+  }
+  body.append(bubble);
+
+  const meta = el('div', 'meta', fmtTime(m.ts || Date.now()));
+  if (mine) { const t = el('span', 'tick', ' · sending'); meta.append(t); }
+  body.append(meta);
+  row.append(body);
+
+  box.append(row);
+  box.scrollTop = box.scrollHeight;
+}
+
+function markDelivered(id) {
+  const t = document.querySelector(`.msg[data-id="${CSS.escape(id)}"] .tick`);
+  if (t) { t.textContent = ' · ✓ delivered'; t.classList.add('ok'); }
+}
+
+let typingTimer;
+function showTyping(name) {
+  $('#typing').textContent = `${cleanName(name)} is typing…`;
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => $('#typing').textContent = '', 2500);
+}
+
+/* ===================== Peer error handling ===================== */
+function handlePeerError(err) {
+  console.warn('PeerJS error:', err.type, err);
+  const map = {
+    'peer-unavailable': 'No room found with that code. Check the code and try again.',
+    'network': 'Network problem — check the internet connection on this device.',
+    'server-error': 'Could not reach the pairing server. Try again in a moment.',
+    'socket-error': 'Lost connection to the pairing server.',
+    'browser-incompatible': 'This browser does not support WebRTC. Use Chrome, Edge, Firefox or Safari.',
+  };
+  if (HUB) Object.assign(map, {
+    'peer-unavailable': `No room with that code on this hub (${location.host}). Rooms only exist on the hub that created them, so open the invite link or QR code from the device that made the room.`,
+    'network': 'Lost contact with the laptop running serve.py. Is it still running, and are you on the same Wi-Fi?',
+    'server-error': 'Could not reach the laptop running serve.py.',
+    'socket-error': 'Lost contact with the laptop running serve.py.',
+  });
+  const msg = map[err.type] || ('Connection error: ' + (err.message || err.type));
+  if (role === 'guest' && !joined) return backHome(msg, true);
+  if (role === 'host' && !$('#chat').classList.contains('hidden')) return sys(msg);
+  backHome(msg, true);
+}
+
+/* ===================== HOST ===================== */
+async function createRoom(attempt = 0) {
+  if (attempt === 0) { myName = getName(); if (!myName) return; }
+  if (typeof Peer === 'undefined') return setStatus('Could not load the connection library (vendor/peerjs.min.js).', true);
+  setBusy(true); setStatus('Creating room…');
+  await hubReady;
+  role = 'host';
+  roomCode = genCode();
+  peer = new Peer(APP_PREFIX + roomCode, peerOptions());
+  if (HUB) peer.socket.on('message', onHubMessage);
+
+  peer.on('open', id => {
+    myId = id;
+    members = [{ id, name: myName, host: true }];
+    enterChat();
+    sys(`Room created. Tap "Invite" to share the code ${roomCode} with up to ${MAX_DEVICES - 1} other device(s).`);
+    openInvite();
+  });
+  peer.on('connection', onIncoming);
+  peer.on('disconnected', () => {
+    // Lost the pairing server only; existing chats keep working. Reconnect so new devices can still join.
+    if (peer && !peer.destroyed) setTimeout(() => { try { peer.reconnect(); } catch (_) {} }, 1500);
+  });
+  peer.on('error', err => {
+    if (err.type === 'unavailable-id' && attempt < 5) {   // code collision — pick another
+      peer.destroy(); return createRoom(attempt + 1);
+    }
+    handlePeerError(err);
+  });
+}
+
+function onIncoming(conn) {
+  conn.on('data', d => hostHandle(conn, d));
+  conn.on('close', () => dropGuest(conn.peer, conn));
+  conn.on('error', () => dropGuest(conn.peer, conn));
+}
+
+function refuse(conn, reason) {
+  try { conn.send({ type: 'reject', reason }); } catch (_) {}
+  setTimeout(() => { try { conn.close(); } catch (_) {} }, 600);
+}
+
+function hostHandle(conn, d) {
+  if (!d || typeof d !== 'object') return;
+  const g = guests.get(conn.peer);
+
+  if (!g) {                                         // not yet admitted
+    if (d.type !== 'hello' || pending.has(conn.peer)) return;
+    const name = cleanName(d.name);
+    if (locked) return refuse(conn, 'The room is locked by the host.');
+    if (guests.size + pending.size + 1 >= MAX_DEVICES) return refuse(conn, `The room is full (max ${MAX_DEVICES} devices).`);
+    pending.set(conn.peer, { conn, name });
+    approvalQueue.push(conn.peer);
+    nextApproval();
+    return;
+  }
+
+  switch (d.type) {
+    case 'msg':
+    case 'file': {
+      if (d.type === 'file' && !(d.data instanceof ArrayBuffer || ArrayBuffer.isView(d.data))) return;
+      // The host stamps sender identity so guests can't impersonate each other.
+      const m = { type: d.type, id: String(d.id), from: conn.peer, name: g.name, ts: Number(d.ts) || Date.now(),
+                  text: d.text, fileName: d.fileName, mime: d.mime, size: d.size, data: d.data };
+      showMessage(m, false);
+      conn.send({ type: 'ack', id: m.id });
+      broadcast(m, conn.peer);
+      break;
+    }
+    case 'typing':
+      showTyping(g.name);
+      broadcast({ type: 'typing', name: g.name }, conn.peer);
+      break;
+  }
+}
+
+function nextApproval() {
+  if (!$('#modal').classList.contains('hidden')) return;      // one prompt at a time
+  while (approvalQueue.length && !pending.has(approvalQueue[0])) approvalQueue.shift();
+  if (!approvalQueue.length) return;
+  const id = approvalQueue[0];
+  $('#modalText').textContent = `"${pending.get(id).name}" wants to join this room.`;
+  $('#modal').classList.remove('hidden');
+}
+
+function decide(accept) {
+  $('#modal').classList.add('hidden');
+  const id = approvalQueue.shift();
+  const p = id && pending.get(id);
+  if (p) {
+    pending.delete(id);
+    if (!p.conn.open) { /* they gave up */ }
+    else if (!accept) refuse(p.conn, 'The host declined your request.');
+    else admit(id, p);
+  }
+  nextApproval();
+}
+
+function admit(id, p) {
+  guests.set(id, p);
+  const member = { id, name: p.name, host: false };
+  members.push(member);
+  p.conn.send({ type: 'welcome', code: roomCode, members, max: MAX_DEVICES, you: id });
+  broadcast({ type: 'join', member }, id);
+  sys(`${p.name} joined`);
+  renderMembers();
+}
+
+function dropGuest(id, conn) {
+  // A device that fell back to the hub relay may leave a dead direct connection behind with
+  // the same id; only react when the connection that closed is the one actually in use.
+  const cur = (guests.get(id) || pending.get(id) || {}).conn;
+  if (conn && cur && cur !== conn) return;
+  if (pending.has(id)) {
+    pending.delete(id);
+    if (approvalQueue[0] === id && !$('#modal').classList.contains('hidden')) { $('#modal').classList.add('hidden'); approvalQueue.shift(); nextApproval(); }
+  }
+  const g = guests.get(id);
+  if (!g) return;
+  guests.delete(id);
+  members = members.filter(m => m.id !== id);
+  broadcast({ type: 'leave', id, name: g.name });
+  sys(`${g.name} left`);
+  renderMembers();
+}
+
+function broadcast(obj, exceptId) {
+  for (const [id, g] of guests) if (id !== exceptId && g.conn.open) { try { g.conn.send(obj); } catch (e) { console.warn(e); } }
+}
+
+function toggleLock() {
+  locked = !locked;
+  $('#lockBtn').textContent = locked ? 'Locked' : 'Lock';
+  $('#lockBtn').classList.toggle('lock-on', locked);
+  sys(locked ? 'Room locked — no new devices can join.' : 'Room unlocked — devices can join with the code.');
+}
+
+/* ===================== GUEST ===================== */
+async function joinRoom() {
+  myName = getName(); if (!myName) return;
+  const code = $('#codeInput').value.replace(/\D/g, '');
+  if (code.length !== 6) { setStatus('Enter the 6-digit room code.', true); $('#codeInput').focus(); return; }
+  if (typeof Peer === 'undefined') return setStatus('Could not load the connection library (vendor/peerjs.min.js).', true);
+
+  setBusy(true); setStatus('Connecting…');
+  await hubReady;
+  role = 'guest'; roomCode = code; joined = false;
+  peer = new Peer(peerOptions());
+  if (HUB) peer.socket.on('message', onHubMessage);
+  peer.on('error', handlePeerError);
+  peer.on('open', id => {
+    myId = id;
+    if (HUB && FORCE_RELAY) return useRelayToHost();
+    hostConn = peer.connect(APP_PREFIX + code, { reliable: true });
+    // Offline mode: if the direct link hasn't opened in a few seconds, chat through the hub instead.
+    if (HUB) fallbackTimer = setTimeout(useRelayToHost, DIRECT_TIMEOUT_MS);
+    hostConn.on('open', () => { clearTimeout(fallbackTimer); hostConn.send({ type: 'hello', name: myName }); setStatus('Connected — waiting for the host to accept you…'); });
+    hostConn.on('data', guestHandle);
+    hostConn.on('close', onHostGone);
+    hostConn.on('error', onHostGone);
+  });
+  joinTimer = setTimeout(() => { if (!joined) backHome('Timed out. Is the host still in the room, and did they accept you?', true); }, JOIN_TIMEOUT_MS);
+}
+
+function guestHandle(d) {
+  if (!d || typeof d !== 'object') return;
+  switch (d.type) {
+    case 'welcome':
+      joined = true; members = d.members || []; if (d.you) myId = d.you;
+      enterChat();
+      sys('You joined the room. Say hi 👋');
+      break;
+    case 'reject':
+      backHome(d.reason || 'Could not join.', true);
+      break;
+    case 'msg':
+    case 'file':
+      showMessage(d, false);
+      break;
+    case 'ack':  markDelivered(d.id); break;
+    case 'typing': showTyping(d.name); break;
+    case 'join':
+      if (d.member && !members.some(m => m.id === d.member.id)) members.push(d.member);
+      sys(`${cleanName(d.member && d.member.name)} joined`); renderMembers();
+      break;
+    case 'leave':
+      members = members.filter(m => m.id !== d.id);
+      sys(`${cleanName(d.name)} left`); renderMembers();
+      break;
+    case 'end':
+      joined = false;
+      sys('The host ended the room.');
+      setComposer(false);
+      $('#rejoinBtn').classList.add('hidden');
+      break;
+  }
+}
+
+function onHostGone() {
+  if (role !== 'guest') return;
+  if (!joined) { if ($('#chat').classList.contains('hidden')) backHome('Connection closed.', true); return; }
+  joined = false;
+  sys('Disconnected from the host.');
+  setComposer(false);
+  $('#rejoinBtn').classList.remove('hidden');
+}
+
+/* ===================== Sending ===================== */
+function deliver(m) {
+  if (role === 'host') { broadcast(m); if (guests.size) markDelivered(m.id); }
+  else if (hostConn && hostConn.open) hostConn.send(m);
+  else toast('Not connected');
+}
+
+function sendText() {
+  const input = $('#msgInput');
+  const text = input.value.trim();
+  if (!text) return;
+  const m = { type: 'msg', id: uid(), from: myId, name: myName, text, ts: Date.now() };
+  showMessage(m, true);
+  deliver(m);
+  input.value = '';
+  input.focus();
+}
+
+async function sendFile(file) {
+  if (!file) return;
+  if (file.size > MAX_FILE_MB * 1048576) return toast(`Files up to ${MAX_FILE_MB} MB only`);
+  const data = await file.arrayBuffer();
+  const m = { type: 'file', id: uid(), from: myId, name: myName, fileName: file.name, mime: file.type, size: file.size, data, ts: Date.now() };
+  showMessage(m, true);
+  deliver(m);
+}
+
+let lastTyping = 0;
+function sendTyping() {
+  const now = Date.now();
+  if (now - lastTyping < 2000) return;
+  lastTyping = now;
+  const t = { type: 'typing', name: myName };
+  if (role === 'host') broadcast(t); else if (hostConn && hostConn.open) hostConn.send(t);
+}
+
+function leave() {
+  if (role === 'host') {
+    broadcast({ type: 'end' });
+    setTimeout(() => backHome('You ended the room.'), 300);
+  } else backHome('You left the room.');
+}
+
+/* ===================== Wiring ===================== */
+$('#nameInput').value = load('pairchat-name');
+// Opened from an invite link (…/#123456): fill in the code and make "Join" the main action.
+function applyInviteHash() {
+  const code = (location.hash.match(/\d{6}/) || [])[0];
+  if (!code || role) return;
+  $('#codeInput').value = code;
+  const box = $('#invited');
+  box.textContent = `You're invited to room ${code}. Enter your name and tap "Join room".`;
+  box.classList.remove('hidden');
+  $('#home').classList.add('invited');
+  $('#joinBtn').classList.remove('ghost');
+  $('#createBtn').classList.add('ghost');
+  ($('#nameInput').value ? $('#joinBtn') : $('#nameInput')).focus();
+}
+applyInviteHash();
+window.addEventListener('hashchange', applyInviteHash);
+window.addEventListener('pageshow', applyInviteHash);   // Firefox may restore an old (empty) form value on reload
+window.addEventListener('online', updateBadge);
+window.addEventListener('offline', updateBadge);
+
+$('#createBtn').onclick = () => createRoom();
+$('#joinBtn').onclick = joinRoom;
+$('#codeInput').addEventListener('input', e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); });
+$('#codeInput').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom(); });
+$('#nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') ($('#codeInput').value.length === 6 ? joinRoom() : createRoom()); });
+
+$('#sendBtn').onclick = sendText;
+$('#msgInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); } });
+$('#msgInput').addEventListener('input', sendTyping);
+$('#attachBtn').onclick = () => $('#fileInput').click();
+$('#fileInput').onchange = e => { sendFile(e.target.files[0]); e.target.value = ''; };
+
+$('#leaveBtn').onclick = leave;
+$('#lockBtn').onclick = toggleLock;
+$('#rejoinBtn').onclick = () => { const c = roomCode; backHome(); $('#codeInput').value = c; joinRoom(); };
+$('#acceptBtn').onclick = () => decide(true);
+$('#rejectBtn').onclick = () => decide(false);
+$('#codePill').onclick = openInvite;
+$('#inviteBtn').onclick = openInvite;
+$('#inviteClose').onclick = () => $('#invite').classList.add('hidden');
+$('#invite').addEventListener('click', e => { if (e.target.id === 'invite') $('#invite').classList.add('hidden'); });
+$('#addrSelect').onchange = renderInvite;
+$('#copyLinkBtn').onclick = async () => {
+  const link = inviteLink();
+  const text = link || roomCode;
+  toast(await copyText(text) ? (link ? 'Invite link copied' : 'Code copied') : 'Copy failed — code is ' + roomCode);
+};
+$('#shareBtn').onclick = async () => {
+  const link = inviteLink();
+  try {
+    await navigator.share({ title: 'Join my PairChat room', text: `Join my PairChat room — code ${roomCode}`, url: link || undefined });
+  } catch (e) { if (e.name !== 'AbortError') toast('Sharing not available — use Copy link'); }
+};
+
+window.addEventListener('beforeunload', () => { if (role === 'host') broadcast({ type: 'end' }); });
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+sequenceDiagram
+    autonumber
+    actor H as Host (Windows laptop)
+    participant S as Hub (serve.py)
+    actor G as Guest (Linux laptop / phone)
+
+    H->>S: Create room: register ID pairchat-v1-<6-digit code>
+    S-->>H: OPEN
+    H->>H: Show Invite panel (code + QR + link)
+    G->>S: Scan QR / open http://<laptop>:8765/#35;123456
+    S-->>G: PairChat page (code already filled in)
+    G->>S: Connect with a random device ID
+    S-->>G: OPEN
+    G->>S: OFFER to pairchat-v1-<code>
+    alt room exists
+        S->>H: OFFER (hidden .local addresses swapped for real LAN IPs)
+        H-->>S: ANSWER + ICE candidates
+        S-->>G: ANSWER + ICE candidates
+    else wrong code
+        S-->>G: EXPIRE -> "No room with that code"
+    end
+    G->>H: hello {name} (direct link, or relay after 6 s)
+    H->>H: "Guest wants to join" -> Accept / Decline
+    H-->>G: welcome {members, your ID}
+    H-->>G: join / leave notices for everyone else

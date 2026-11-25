@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PairChat Check</title>
+<style>
+  @font-face { font-family: "Inter var"; font-weight: 100 900; src: url("vendor/inter-var.woff2") format("woff2"); }
+  :root { --bg: #0b0d24; --panel: #15183c; --line: rgba(255,255,255,.1); --text: #eef0ff; --muted: #9ca2cc;
+          --ok: #34d399; --fail: #fb7185; --warn: #fbbf24; --grad: linear-gradient(135deg, #7c5cff, #4f8bff 55%, #22d3ee); }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg: #f4f5ff; --panel: #fff; --line: rgba(20,24,80,.1); --text: #12143a; --muted: #5a5f8f; --ok: #059669; --fail: #e11d48; --warn: #b45309; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 "Inter var", "Segoe UI", Roboto, Arial, sans-serif; padding: 24px 16px; }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.02em; }
+  p { color: var(--muted); margin: 0 0 18px; }
+  ol { list-style: none; padding: 0; margin: 0 0 18px; display: grid; gap: 8px; }
+  li { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: grid; grid-template-columns: 56px 1fr; gap: 10px; align-items: start; }
+  .tag { font-size: 11px; font-weight: 800; border-radius: 999px; padding: 3px 0; text-align: center; letter-spacing: .05em; color: #fff; background: var(--muted); }
+  .ok .tag { background: var(--ok); } .fail .tag { background: var(--fail); } .warn .tag { background: var(--warn); }
+  b { display: block; font-size: 14px; }
+  small { color: var(--muted); word-break: break-word; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 11px 18px; color: #fff; background: var(--grad); cursor: pointer; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  #summary { font-weight: 700; margin: 0 0 14px; }
+  a { color: #7c9bff; }
+</style>
+</head>
+<body>
+<main>
+  <h1>PairChat connection check</h1>
+  <p>Run this on the device that can't join. Results also appear in the PowerShell window running <code>serve.py</code>.</p>
+  <div id="summary">Running…</div>
+  <ol id="steps"></ol>
+  <button id="again">Run again</button>
+  <button id="copy" class="ghost">Copy results</button>
+  <p style="margin-top:18px"><a href="./">← Back to PairChat</a></p>
+</main>
+<script>
+const steps = [];
+const list = document.getElementById('steps');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function add(name, status, detail) {
+  steps.push({ name, status, detail });
+  const li = document.createElement('li'); li.className = status;
+  const tag = document.createElement('span'); tag.className = 'tag';
+  tag.textContent = { ok: 'PASS', fail: 'FAIL', warn: 'WARN', info: 'INFO' }[status];
+  const box = document.createElement('div');
+  const b = document.createElement('b'); b.textContent = name;
+  const s = document.createElement('small'); s.textContent = detail;
+  box.append(b, s); li.append(tag, box); list.append(li);
+}
+
+function wsCheck(url, holdMs) {
+  return new Promise(resolve => {
+    const t0 = performance.now();
+    const r = { opened: false, gotOpen: false, closed: null, relayEcho: false, error: false };
+    let ws;
+    try { ws = new WebSocket(url); } catch (e) { r.closed = 'could not create: ' + e.message; return resolve(r); }
+    let hb;
+    const finish = () => { clearInterval(hb); try { ws.close(); } catch (_) {} resolve(r); };
+    ws.onopen = () => { r.opened = true; r.openMs = Math.round(performance.now() - t0);
+      hb = setInterval(() => ws.readyState === 1 && ws.send(JSON.stringify({ type: 'HEARTBEAT' })), 3000); };
+    ws.onerror = () => { r.error = true; };
+    ws.onmessage = e => {
+      let m; try { m = JSON.parse(e.data); } catch (_) { return; }
+      if (m.type === 'OPEN') { r.gotOpen = true; ws.send(JSON.stringify({ type: 'RELAY', dst: r.id, payload: { type: 'echo' } })); }
+      if (m.type === 'RELAY' && m.payload && m.payload.type === 'echo') r.relayEcho = true;
+    };
+    ws.onclose = e => { if (r.closed === null) r.closed = `code ${e.code}${e.reason ? ' ' + e.reason : ''} after ${Math.round(performance.now() - t0)} ms`; finish(); };
+    r.id = new URL(url).searchParams.get('id');
+    setTimeout(finish, holdMs);
+  });
+}
+
+async function webrtcLoopback() {
+  if (!window.RTCPeerConnection) return { ok: false, detail: 'RTCPeerConnection is missing (WebRTC disabled in this browser?)' };
+  const a = new RTCPeerConnection({ iceServers: [] }), b = new RTCPeerConnection({ iceServers: [] });
+  const cands = [];
+  a.onicecandidate = e => { if (e.candidate) { cands.push(e.candidate.candidate); b.addIceCandidate(e.candidate).catch(() => {}); } };
+  b.onicecandidate = e => { if (e.candidate) a.addIceCandidate(e.candidate).catch(() => {}); };
+  const dc = a.createDataChannel('t');
+  const opened = new Promise(res => { dc.onopen = () => res(true); setTimeout(() => res(false), 8000); });
+  await a.setLocalDescription(await a.createOffer());
+  await b.setRemoteDescription(a.localDescription);
+  await b.setLocalDescription(await b.createAnswer());
+  await a.setRemoteDescription(b.localDescription);
+  const ok = await opened;
+  a.close(); b.close();
+  const mdns = cands.filter(c => /\.local /.test(c)).length;
+  const ips = [...new Set(cands.map(c => c.split(' ')[4]).filter(x => x && !/\.local$/.test(x)))];
+  return { ok, detail: `${ok ? 'data channel opened' : 'data channel did NOT open in 8 s'} · ${cands.length} candidate(s): ${mdns} hidden (.local), visible IPs: ${ips.join(', ') || 'none'}` };
+}
+
+async function run() {
+  steps.length = 0; list.innerHTML = '';
+  document.getElementById('summary').textContent = 'Running…';
+  const ua = navigator.userAgent;
+  add('Browser', 'info', ua);
+  add('WebSocket support', window.WebSocket ? 'ok' : 'fail', window.WebSocket ? 'available' : 'missing');
+  add('WebRTC support', window.RTCPeerConnection ? 'ok' : 'fail', window.RTCPeerConnection ? 'available' : 'missing: chat can still work through the hub relay');
+
+  let hub = null;
+  try {
+    const r = await fetch('pairchat-local.json', { cache: 'no-store' });
+    hub = r.ok ? await r.json() : null;
+    add('Reach the laptop hub', hub ? 'ok' : 'fail', hub ? `served by serve.py at ${location.host}` : `HTTP ${r.status}: this page is not served by serve.py`);
+  } catch (e) { add('Reach the laptop hub', 'fail', e.message); }
+
+  if (hub) {
+    try {
+      const r = await fetch('peerjs/id?ts=' + Date.now(), { cache: 'no-store' });
+      add('Get a device ID', r.ok ? 'ok' : 'fail', r.ok ? await r.text() : 'HTTP ' + r.status);
+    } catch (e) { add('Get a device ID', 'fail', e.message); }
+
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const id = 'check-' + Math.random().toString(36).slice(2, 10);
+    const url = `${proto}://${location.host}/peerjs?key=peerjs&id=${id}&token=t&version=check`;
+    const w = await wsCheck(url, 12000);
+    if (!w.opened) add('Pairing connection (WebSocket)', 'fail', `could not open ${url.replace(/\?.*/, '')} — ${w.closed || 'no response'}. A firewall, proxy, VPN or privacy extension may be blocking it.`);
+    else {
+      add('Pairing connection (WebSocket)', w.gotOpen ? 'ok' : 'fail', `opened in ${w.openMs} ms${w.gotOpen ? ', hub said hello' : ', but the hub never said hello'}`);
+      add('Connection stays up (12 s)', w.closed ? 'fail' : 'ok', w.closed ? 'dropped: ' + w.closed : 'stable');
+      add('Hub relay (backup path)', w.relayEcho ? 'ok' : 'fail', w.relayEcho ? 'messages can travel through the laptop' : 'relay echo not received');
+    }
+  }
+
+  try {
+    const r = await webrtcLoopback();
+    add('WebRTC on this device', r.ok ? 'ok' : 'warn', r.detail + (r.ok ? '' : ' — direct links will fail; chat falls back to the hub relay'));
+  } catch (e) { add('WebRTC on this device', 'warn', e.message); }
+
+  const fails = steps.filter(s => s.status === 'fail').length;
+  document.getElementById('summary').textContent = fails ? `${fails} check(s) failed — see below.` : 'All checks passed. This device can join PairChat.';
+  try { await fetch('check-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ua, steps }) }); } catch (_) {}
+}
+
+document.getElementById('again').onclick = run;
+document.getElementById('copy').onclick = async () => {
+  const text = steps.map(s => `[${s.status.toUpperCase()}] ${s.name}: ${s.detail}`).join('\n');
+  try { await navigator.clipboard.writeText(text); }
+  catch (_) { const t = document.createElement('textarea'); t.value = text; document.body.append(t); t.select(); document.execCommand('copy'); t.remove(); }
+  document.getElementById('copy').textContent = 'Copied ✓';
+};
+run();
+</script>
+</body>
+</html>

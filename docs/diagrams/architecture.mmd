@@ -1,0 +1,20 @@
+flowchart LR
+    subgraph D["Guest devices (same Wi-Fi or hotspot)"]
+        direction TB
+        L["Linux laptop<br/>any browser"]
+        P["Phone<br/>any browser"]
+    end
+    subgraph HUB["serve.py hub, running on the Windows laptop"]
+        direction TB
+        WEB["1 - Web server<br/>sends the PairChat page"]
+        SIG["2 - Pairing server<br/>room code = PeerJS ID"]
+        REL["3b - Relay<br/>backup chat path"]
+    end
+    HOST["Host browser<br/>Windows laptop<br/>creates room, accepts joins,<br/>forwards messages"]
+
+    D -- "1 - scan QR / open invite link" --> WEB
+    D <-. "2 - pairing over WebSocket" .-> SIG
+    SIG <-. "2" .-> HOST
+    D <== "3a - direct encrypted WebRTC" ==> HOST
+    D <-- "3b - if direct is blocked" --> REL
+    REL <--> HOST

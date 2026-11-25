@@ -1,0 +1,4 @@
+# Only needed to re-record the demo video and re-render the diagrams (tools/).
+# The app itself has no dependencies.
+playwright==1.48.0
+imageio-ffmpeg==0.5.1

@@ -1,0 +1,20 @@
+
+  PairChat hub is running - no internet needed.
+
+  On this computer : http://localhost:8790/
+  Other devices    : http://10.247.230.242:8790/
+
+  Create a room, tap 'Invite' and scan the QR code with the other devices.
+  All devices must be on the same Wi-Fi / hotspot. Press Ctrl+C to stop.
+
+  [hub] device 10.247.230.242 opened the app
+  [hub] device 10.247.230.242 opened the app
+  [hub] room 384484 created on 127.0.0.1
+  [hub] device 10.247.230.242 connected for pairing (Edge on Windows)
+  [hub] join request for room 384484 from 10.247.230.242
+  [hub] device 10.247.230.242 opened the app
+  [hub] device 10.247.230.242 connected for pairing (Edge on Windows)
+  [hub] device 98d501 <-> room 384484: direct link unavailable, relaying chat through this laptop
+  [hub] device 10.247.230.242 pairing connection ended after 30s: browser closed it
+  [hub] room 384484 closed
+  [hub] device 10.247.230.242 pairing connection ended after 41s: browser closed it (code 1001)

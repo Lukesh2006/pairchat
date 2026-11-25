@@ -1,0 +1,17 @@
+flowchart TD
+    A([Open PairChat page]) --> B{Served by serve.py?<br/>GET /pairchat-local.json}
+    B -- yes --> C[Offline mode<br/>pair through the laptop hub]
+    B -- no --> D[Online mode<br/>pair through the PeerJS cloud broker]
+    C --> E[Create room or enter 6-digit code]
+    D --> E
+    E --> F{Room exists<br/>on this hub?}
+    F -- no --> G[/"No room with that code"/]
+    F -- yes --> H[Try direct WebRTC link]
+    H --> I{Link opens<br/>within 6 s?}
+    I -- yes --> J[Direct, end-to-end encrypted]
+    I -- "no (hotspot / client isolation)" --> K{Offline mode?}
+    K -- yes --> L[Relay through the hub<br/>stays on your network]
+    K -- no --> M[/"Could not connect"/]
+    J --> N[Send hello -> host taps Accept]
+    L --> N
+    N --> O([Chatting])

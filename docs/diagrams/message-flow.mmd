@@ -1,0 +1,12 @@
+flowchart LR
+    G1["Guest A<br/>types a message"] -- "msg / file" --> H{{"Host<br/>(star centre)"}}
+    H -- "stamps sender name + ID<br/>(no impersonation)" --> H
+    H -- "ack -> delivered tick" --> G1
+    H -- broadcast --> G2["Guest B"]
+    H -- shows it --> HV["Host screen"]
+    subgraph FILES["Photos and files up to 8 MB"]
+        direction TB
+        F1["Direct link: PeerJS binary chunks"]
+        F2["Relay: base64 chunks of 384 KB,<br/>reassembled and checked by size"]
+    end
+    H -. "how files travel" .-> FILES
