@@ -2,7 +2,10 @@
 
 **Private chat between 2–3 devices, paired with a 6-digit code. No phone number, no account, no IP address, and no internet needed.**
 
-Start one small Python program on a laptop. Phones and other laptops on the same Wi-Fi or **phone hotspot** scan a QR code, the host taps **Accept**, and everyone is chatting. Messages and photos go device-to-device whenever the network allows. Nothing is stored anywhere.
+### 🌍 Try it now: **https://lukesh2006.github.io/pairchat/**
+Open it, create a room, tap **Invite → Share…** and send the link to a friend anywhere in the world. They tap it, join, you tap **Accept**, and you're chatting over your own internet connections. Nothing to install.
+
+**Offline instead:** start one small Python program on a laptop. Phones and other laptops on the same Wi-Fi or **phone hotspot** scan a QR code, the host taps **Accept**, and everyone is chatting. Messages and photos go device-to-device whenever the network allows. Nothing is stored anywhere.
 
 ![PairChat demo: a Windows laptop, a Linux laptop and a phone chatting through the offline hub](docs/demo/pairchat-demo.gif)
 
@@ -76,7 +79,18 @@ No router? Turn on a **phone hotspot** and connect the laptop to it. Every devic
 
 ## Online mode (devices anywhere)
 
-Upload the `app/` folder to any static host (GitHub Pages, Netlify Drop, Cloudflare Pages). Open the `https://…` URL, create a room, then tap **Invite → Share…** (WhatsApp, Telegram, email…) or **Copy link**. Pairing then goes through the free PeerJS cloud broker (`0.peerjs.com`), and the devices can be on different networks.
+**Live site: https://lukesh2006.github.io/pairchat/**
+
+1. Open the site and click **Create a room**.
+2. Tap **Invite → Share…** (WhatsApp, Telegram, email…) or **Copy link**, and send it to your friend.
+3. Your friend opens the link on their own phone or laptop, on **any internet connection, anywhere**, and taps **Join room**.
+4. Tap **Accept**. Commands, Copy, Split, links and photos all work the same as offline.
+
+Pairing goes through the free PeerJS cloud broker (`0.peerjs.com`). Messages then travel **directly between the two devices**, encrypted (WebRTC/DTLS). If a strict network blocks direct links, PeerJS's free TURN relay is used. That works but can be slower, and on very locked-down office or campus networks it may not connect at all.
+
+The site is published automatically by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push to `main` that changes `app/`. It runs the hub tests first, then deploys `app/index.html` and `app/vendor/` (not `serve.py` or `check.html`, which are offline-only). [`tools/smoke_online.py`](tools/smoke_online.py) checks the live site end to end: two browser sessions create a room, join by invite link, chat, and split commands.
+
+You can also host the `app/` folder yourself on any static host (Netlify Drop, Cloudflare Pages…).
 
 The page decides the mode by itself: if `serve.py` is serving it (it answers `/pairchat-local.json`), it uses the local hub; otherwise it uses the cloud broker.
 
@@ -275,10 +289,12 @@ pairchat/
 │   ├── diagrams/             Mermaid sources + rendered PNG/SVG
 │   └── screenshots/
 ├── tests/test_hub.py         end-to-end hub tests (stdlib only)
-└── tools/
-    ├── record_demo.py        records the demo video (Playwright + Edge)
-    ├── render_diagrams.py    renders the Mermaid diagrams
-    └── requirements-demo.txt only for tools/
+├── tools/
+│   ├── record_demo.py        records the demo video (Playwright + Edge)
+│   ├── render_diagrams.py    renders the Mermaid diagrams
+│   ├── smoke_online.py       end-to-end check of the live GitHub Pages site
+│   └── requirements-demo.txt only for tools/
+└── .github/workflows/pages.yml  tests + deploys app/ to GitHub Pages
 ```
 
 ## Hub protocol reference
