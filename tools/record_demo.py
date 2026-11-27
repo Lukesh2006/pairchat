@@ -10,7 +10,8 @@ What it does
        * "Linux laptop"   - joins with the invite link over the LAN address
        * "Phone"          - phone-sized screen, joins through the hub relay (?relay),
                              the same path a phone hotspot falls back to
-  3. Chats, sends a photo, leaves - then stitches the three recordings side by side
+  3. Chats, pastes a block of commands (split prompt -> one message per command),
+     copies one with the Copy button, sends a link and a photo, leaves - then stitches the three recordings side by side
      into docs/demo/pairchat-demo.mp4 (+ a GIF preview) and saves screenshots.
 """
 from __future__ import annotations
@@ -98,7 +99,14 @@ def main() -> None:
 
             for p in (win, lin, ph):
                 p.goto(host_url if p is win else lan)
-            pause(2.5)
+            pause(1.5)
+            # Sync flash: a red frame shown in all three windows at the same moment. compose()
+            # finds it in each recording, lines the three videos up on it, and cuts it out.
+            for p in (win, lin, ph):
+                p.evaluate("""() => { const d = document.createElement('div');
+                    d.style.cssText = 'position:fixed;inset:0;background:#ff0000;z-index:2147483647';
+                    document.body.append(d); setTimeout(() => d.remove(), 700); }""")
+            pause(2)
             win.screenshot(path=str(SHOTS / "home.png"))
 
             # 1. Windows laptop creates the room
@@ -148,15 +156,42 @@ def main() -> None:
             pause(1.5)
             send(ph, "Phone here! I came in through the hub relay.")
             pause(1.5)
+
+            # 5. Paste a block of commands -> split prompt -> one message per command
+            send(win, "Run these on the Linux laptop:")
+            pause(1)
+            win.fill("#msgInput", "cd ~/projects/pairchat\ngit pull\n\ndocker run \\\n  -p 8080:80 \\\n  nginx\npython3 app/serve.py --port 8765")
+            pause(1.8)
+            win.click("#sendBtn")
+            win.wait_for_selector("#splitBar:not(.hidden)")
+            pause(3.2)
+            win.screenshot(path=str(SHOTS / "split-prompt.png"))
+            win.click("#splitYes")
+            pause(2)
+
+            # 6. Linux laptop copies one command with the Copy button
+            lin.locator(".msg:not(.mine)", has_text="git pull").locator(".copy-btn").click()
+            pause(2.2)
+            send(lin, "Copied 'git pull' - running it now")
+            pause(1.5)
+
+            # 7. A link and a photo from the phone
+            send(ph, "Docs are here: https://github.com/Lukesh2006/pairchat")
+            pause(1.5)
             photo = win.screenshot(type="png")
             ph.set_input_files("#fileInput", files=[{"name": "laptop-screen.png", "mimeType": "image/png", "buffer": photo}])
             pause(2.5)
             send(lin, "Got the photo on Linux too.")
             pause(2.5)
             win.screenshot(path=str(SHOTS / "chat-laptop.png"))
+            ph.locator(".msg", has_text="Run these on").evaluate("el => el.scrollIntoView({block: 'start'})")
+            pause(0.5)
+            ph.screenshot(path=str(SHOTS / "commands-phone.png"))
+            ph.evaluate("const m = document.querySelector('#messages'); m.scrollTop = m.scrollHeight")
+            pause(1)
             ph.screenshot(path=str(SHOTS / "chat-phone.png"))
 
-            # 5. Phone leaves
+            # 8. Phone leaves
             ph.click("#leaveBtn")
             pause(3)
 
@@ -179,9 +214,34 @@ def main() -> None:
     print("done:", DEMO / "pairchat-demo.mp4")
 
 
+def flash_time(video: Path) -> float | None:
+    """Seconds into `video` where the red sync flash first appears."""
+    reader = imageio_ffmpeg.read_frames(str(video), pix_fmt="rgb24")
+    meta = next(reader)
+    w, h = meta["size"]
+    fps = meta.get("fps") or 25
+    try:
+        for i, frame in enumerate(reader):
+            if i > fps * 30:
+                break
+            px = (h // 2 * w + w // 2) * 3                      # centre pixel
+            r, g, b = frame[px], frame[px + 1], frame[px + 2]
+            if r > 200 and g < 70 and b < 70:
+                return i / fps
+    finally:
+        reader.close()
+    return None
+
+
 def compose(videos: dict, starts: dict, work: Path) -> None:
     ff = imageio_ffmpeg.get_ffmpeg_exe()
-    latest = max(starts.values())
+    flashes = {name: flash_time(path) for name, path in videos.items()}
+    print("sync flash found at", {k: (round(v, 2) if v is not None else None) for k, v in flashes.items()})
+    if all(v is not None for v in flashes.values()):
+        trims = {name: t + 0.8 for name, t in flashes.items()}      # start right after the flash
+    else:                                                          # fall back to wall-clock alignment
+        latest = max(starts.values())
+        trims = {name: latest - starts[name] for name in videos}
     font = "C\\:/Windows/Fonts/segoeuib.ttf" if Path("C:/Windows/Fonts/segoeuib.ttf").exists() else ""
     label = lambda text, x, y: (f"drawtext=text='{text}':x={x}:y={y}:fontsize=22:fontcolor=white"
                                 + (f":fontfile='{font}'" if font else ""))
@@ -203,15 +263,15 @@ def compose(videos: dict, starts: dict, work: Path) -> None:
     script.write_text(graph, encoding="utf-8")
     inputs = []
     for name in ("windows", "linux", "phone"):
-        trim = latest - starts[name]                      # align the three recordings in time
-        inputs += ["-ss", f"{trim:.2f}", "-i", str(videos[name])]
+        inputs += ["-ss", f"{trims[name]:.2f}", "-i", str(videos[name])]
     mp4 = DEMO / "pairchat-demo.mp4"
     subprocess.run([ff, "-y", *inputs, "-filter_complex_script", str(script), "-map", "[out]",
                     "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "26", "-preset", "slow", "-movflags", "+faststart",
                     str(mp4)], check=True)
     gif = DEMO / "pairchat-demo.gif"
     subprocess.run([ff, "-y", "-i", str(mp4), "-vf",
-                    "fps=7,scale=800:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=96[p];[s1][p]paletteuse=dither=bayer:bayer_scale=4",
+                    # README preview: 1.5x speed, fewer colours -> stays well under GitHub's 10 MB image limit
+                    "setpts=PTS/1.5,fps=6,scale=760:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=64[p];[s1][p]paletteuse=dither=bayer:bayer_scale=4",
                     str(gif)], check=True)
 
 

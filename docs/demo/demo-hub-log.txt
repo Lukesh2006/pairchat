@@ -9,12 +9,12 @@
 
   [hub] device 10.247.230.242 opened the app
   [hub] device 10.247.230.242 opened the app
-  [hub] room 384484 created on 127.0.0.1
+  [hub] room 393607 created on 127.0.0.1
   [hub] device 10.247.230.242 connected for pairing (Edge on Windows)
-  [hub] join request for room 384484 from 10.247.230.242
+  [hub] join request for room 393607 from 10.247.230.242
   [hub] device 10.247.230.242 opened the app
   [hub] device 10.247.230.242 connected for pairing (Edge on Windows)
-  [hub] device 98d501 <-> room 384484: direct link unavailable, relaying chat through this laptop
-  [hub] device 10.247.230.242 pairing connection ended after 30s: browser closed it
-  [hub] room 384484 closed
-  [hub] device 10.247.230.242 pairing connection ended after 41s: browser closed it (code 1001)
+  [hub] device 3392a4 <-> room 393607: direct link unavailable, relaying chat through this laptop
+  [hub] device 10.247.230.242 pairing connection ended after 57s: browser closed it
+  [hub] room 393607 closed
+  [hub] device 10.247.230.242 pairing connection ended after 68s: browser closed it (code 1001)

@@ -6,7 +6,7 @@ Start one small Python program on a laptop. Phones and other laptops on the same
 
 ![PairChat demo: a Windows laptop, a Linux laptop and a phone chatting through the offline hub](docs/demo/pairchat-demo.gif)
 
-▶ **[Watch the full demo video (MP4, 51 s)](docs/demo/pairchat-demo.mp4)**. It's a real recording of three browser windows on one laptop, running against the real hub. See [Proof](#proof) for the run on three physical devices.
+▶ **[Watch the full demo video (MP4, 84 s)](docs/demo/pairchat-demo.mp4)**. It's a real recording of three browser windows on one laptop, running against the real hub. See [Proof](#proof) for the run on three physical devices.
 
 ---
 
@@ -86,7 +86,7 @@ PairChat is designed for getting commands from one device onto another quickly.
 
 | Split prompt (laptop) | Received on the phone, one command per message |
 |---|---|
-| ![split prompt](docs/screenshots/split-prompt.jpg) | ![commands on phone](docs/screenshots/commands-phone.jpg) |
+| ![split prompt](docs/screenshots/split-prompt.png) | ![commands on phone](docs/screenshots/commands-phone.png) |
 
 - **Exact formatting.** The message box is multi-line, so a pasted block keeps every line break, space and tab. Anything that looks like a command (several lines, indentation, `git`, `python`, `docker`, `Get-ChildItem`, `&&`, `--flags`…) is shown in a **monospace block** that scrolls sideways instead of wrapping, so columns and indentation stay aligned. Plain chat stays normal text.
 - **Copy button** next to every message. It copies the **exact original text**, including on `http://` LAN pages where browsers block the modern clipboard API.
@@ -226,13 +226,16 @@ Image copies of every diagram (PNG and SVG) are in [`docs/diagrams/`](docs/diagr
 ## Proof
 
 ### 1. Demo video
-[`docs/demo/pairchat-demo.mp4`](docs/demo/pairchat-demo.mp4) (51 s) and the GIF above were recorded by [`tools/record_demo.py`](tools/record_demo.py). It starts a real hub and drives **three real Microsoft Edge windows** (a "Windows laptop", a "Linux laptop" and a phone-sized screen), recording each one:
+[`docs/demo/pairchat-demo.mp4`](docs/demo/pairchat-demo.mp4) (84 s) and the GIF above (sped up 1.5×) were recorded by [`tools/record_demo.py`](tools/record_demo.py). It starts a real hub and drives **three real Microsoft Edge windows** (a "Windows laptop", a "Linux laptop" and a phone-sized screen), recording each one. The three recordings are synchronised on a red flash shown in all windows at the same moment, which is then cut out:
 
 1. The Windows laptop creates a room → Invite panel with code and QR.
 2. The Linux laptop opens the invite link (over the laptop's **network address**, not localhost) and joins → host accepts.
 3. The phone joins through the **hub relay**, the path a phone hotspot falls back to → host accepts.
-4. All three chat; the phone sends a **photo** that arrives on both laptops; ✓ delivered ticks.
-5. The phone leaves; the others see "Phone left".
+4. All three chat, with ✓ delivered ticks and typing indicators.
+5. The laptop pastes a **block of commands** (exact indentation kept) → the **split prompt** appears → *Split into 4 messages*. The multi-line `docker run \` command stays together.
+6. The Linux laptop taps **Copy** on `git pull` and replies.
+7. The phone sends a clickable **link** and a **photo** that arrives on both laptops.
+8. The phone leaves; the others see "Phone left".
 
 The hub's own console output from that recording is in [`docs/demo/demo-hub-log.txt`](docs/demo/demo-hub-log.txt).
 
