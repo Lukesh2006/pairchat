@@ -44,7 +44,8 @@ jobs:
           cp app/index.html _site/
           cp -r app/vendor _site/
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
+      # v3 on purpose: upload-pages-artifact@v4's artifact isn't found by deploy-pages@v4
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
       - id: deployment
