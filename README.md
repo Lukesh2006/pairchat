@@ -49,6 +49,7 @@ Most messengers identify you by **phone number** (WhatsApp, Signal, Telegram) or
 | 🔒 **Direct and encrypted** | WebRTC data channels (DTLS) between devices |
 | 🛟 **Automatic relay** | if a hotspot blocks direct links, chat goes through the laptop hub instead |
 | 💬 **Chat** | text, photos and files up to 8 MB, typing indicator, ✓ delivered ticks, avatars |
+| ⌨️ **Built for commands** | pasted commands keep **exact alignment** (monospace code blocks), a **Copy** button on every message, **split a multi-line paste into one message per command**, clickable links, paste or drop screenshots |
 | 👥 **2–3 devices** | configurable (`MAX_DEVICES`) |
 | 🧪 **Self-test page** | `check.html` tests every step and reports PASS/FAIL to the hub console |
 | 🎨 **Modern UI** | dark/light theme, built for phones, bundled font (works offline) |
@@ -78,6 +79,23 @@ No router? Turn on a **phone hotspot** and connect the laptop to it. Every devic
 Upload the `app/` folder to any static host (GitHub Pages, Netlify Drop, Cloudflare Pages). Open the `https://…` URL, create a room, then tap **Invite → Share…** (WhatsApp, Telegram, email…) or **Copy link**. Pairing then goes through the free PeerJS cloud broker (`0.peerjs.com`), and the devices can be on different networks.
 
 The page decides the mode by itself: if `serve.py` is serving it (it answers `/pairchat-local.json`), it uses the local hub; otherwise it uses the cloud broker.
+
+## Sharing commands, links and photos
+
+PairChat is designed for getting commands from one device onto another quickly.
+
+| Split prompt (laptop) | Received on the phone, one command per message |
+|---|---|
+| ![split prompt](docs/screenshots/split-prompt.jpg) | ![commands on phone](docs/screenshots/commands-phone.jpg) |
+
+- **Exact formatting.** The message box is multi-line, so a pasted block keeps every line break, space and tab. Anything that looks like a command (several lines, indentation, `git`, `python`, `docker`, `Get-ChildItem`, `&&`, `--flags`…) is shown in a **monospace block** that scrolls sideways instead of wrapping, so columns and indentation stay aligned. Plain chat stays normal text.
+- **Copy button** next to every message. It copies the **exact original text**, including on `http://` LAN pages where browsers block the modern clipboard API.
+- **Split prompt.** When you send more than one line, a bar above the box asks *"Your message has 4 commands / lines: split into 4 messages?"* and previews each piece. Choose **Split**, **Send as one block** or **Edit**. On a computer, **Enter** = split and **Esc** = back to editing. Splitting is smart:
+  - blank lines are dropped
+  - lines ending in `\` (bash), `` ` `` (PowerShell) or `^` (cmd) stay joined with the next line
+  - indented lines and block endings (`done`, `fi`, `}`, `else`…) stay with their block, so a `for` loop or `if` block arrives as one message
+- **Links** are clickable. **Photos** can be pasted (Ctrl+V a screenshot) or dragged onto the chat; several files at once are fine.
+- **Typing:** on a computer, **Enter** sends and **Shift+Enter** adds a new line. On a phone, Enter adds a new line and you tap **Send**. Autocorrect and auto-capitals are off, so phones don't turn `git pull` into `Git pull`.
 
 ---
 
@@ -294,6 +312,8 @@ App messages (direct or relayed): `hello`, `welcome`, `reject`, `msg`, `file`, `
 | Max file size | `MAX_FILE_MB` in `app/index.html` | 8 MB |
 | Time before relay fallback | `DIRECT_TIMEOUT_MS` in `app/index.html` | 6000 ms |
 | Force the relay | add `?relay` to the URL, e.g. `http://<laptop>:8765/?relay#123456` | off |
+| Max message length | `maxlength` on `#msgInput` in `app/index.html` | 20,000 characters |
+| Which messages count as commands | `CMD_START` / `isCodeLike()` in `app/index.html` | see code |
 
 ## Troubleshooting
 

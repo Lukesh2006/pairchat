@@ -178,8 +178,51 @@
   .tick.ok { color: var(--ok); }
 
   #typing { height: 20px; padding: 0 22px; font-size: 12px; color: var(--muted); font-style: italic; }
-  .composer { display: flex; gap: 10px; align-items: center; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--panel-hi); }
-  .composer input[type=text] { flex: 1; border-radius: 999px; padding: 13px 18px; }
+  .composer { display: flex; gap: 10px; align-items: flex-end; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--panel-hi); }
+  .composer textarea {
+    flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--panel-hi); border: 1px solid var(--line-strong);
+    border-radius: 22px; padding: 12px 18px; resize: none; outline: none; line-height: 1.45; max-height: 40vh; overflow-y: auto;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .composer textarea::placeholder { color: var(--faint); }
+  .composer textarea:focus { border-color: var(--a1); box-shadow: 0 0 0 4px rgba(124, 92, 255, .18); }
+  .composer textarea.code { font: 13.5px/1.5 var(--mono); white-space: pre; overflow-x: auto; border-radius: 16px; tab-size: 4; }
+
+  /* ---------- code messages, copy buttons, links ---------- */
+  :root { --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, "Roboto Mono", "DejaVu Sans Mono", monospace;
+          --code-bg: #0c0e26; --code-text: #e6e8ff; }
+  .bubble-row { display: flex; align-items: flex-end; gap: 6px; min-width: 0; max-width: 100%; }
+  .mine .bubble-row { flex-direction: row-reverse; }
+  .bubble { min-width: 0; max-width: 100%; }
+  .bubble.code { padding: 0; background: var(--code-bg); color: var(--code-text); border: 1px solid var(--line-strong); box-shadow: none; overflow: hidden; }
+  .mine .bubble.code { border: 1px solid color-mix(in srgb, var(--a1) 70%, transparent); background: var(--code-bg); color: var(--code-text); }
+  .bubble.code pre { margin: 0; padding: 10px 14px; font: 13px/1.55 var(--mono); white-space: pre; overflow-x: auto; tab-size: 4; }
+  .bubble .lnk { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; word-break: break-all; }
+  .copy-btn {
+    flex: none; width: 30px; height: 30px; padding: 0; border-radius: 10px; box-shadow: none;
+    background: var(--panel-hi); color: var(--muted); border: 1px solid var(--line); opacity: .8;
+  }
+  .copy-btn:hover:not(:disabled) { opacity: 1; color: var(--text); border-color: var(--a1); transform: none; }
+  .copy-btn svg { width: 15px; height: 15px; }
+  .copy-btn.done { color: var(--ok); border-color: var(--ok); opacity: 1; }
+  .msg.cont { margin-top: -4px; }
+  .msg.cont .who { display: none; }
+  .msg.cont .avatar { visibility: hidden; }
+  #messages.drop { outline: 2px dashed var(--a3); outline-offset: -10px; }
+
+  /* ---------- split prompt ---------- */
+  .split-bar { margin: 0 14px 10px; padding: 12px 14px; border-radius: 18px; background: var(--panel-solid); border: 1px solid color-mix(in srgb, var(--a1) 60%, transparent); box-shadow: var(--shadow); animation: rise .18s ease-out; }
+  .split-head { display: flex; gap: 10px; align-items: center; }
+  .split-head > svg { width: 22px; height: 22px; color: var(--a3); flex: none; }
+  .split-head b { display: block; font-size: 14px; }
+  .split-head small { color: var(--muted); font-size: 12.5px; }
+  #splitPreview { margin: 10px 0; padding: 8px 10px 8px 34px; max-height: 132px; overflow: auto; background: var(--code-bg); color: var(--code-text); border-radius: 12px; font: 12.5px/1.6 var(--mono); }
+  #splitPreview li { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+  #splitPreview li::marker { color: #7f86b8; }
+  .split-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .split-actions button { padding: 9px 14px; font-size: 13.5px; border-radius: 12px; }
+  .split-keys { margin-top: 8px; font-size: 11.5px; color: var(--faint); }
+  @media (pointer: coarse) { .split-keys { display: none; } }
   .icon-btn { width: 46px; height: 46px; padding: 0; border-radius: 50%; flex: none; }
   .icon-btn svg { width: 20px; height: 20px; }
 
@@ -283,12 +326,29 @@
     </header>
     <div id="messages"></div>
     <div id="typing"></div>
+    <!-- Shown when a multi-line message is about to be sent -->
+    <div id="splitBar" class="split-bar hidden" role="dialog" aria-labelledby="splitTitle">
+      <div class="split-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.2-2.9L3 3"/><path d="m15 9 6-6"/></svg>
+        <div><b id="splitTitle"></b><small id="splitSub"></small></div>
+      </div>
+      <ol id="splitPreview"></ol>
+      <div class="split-actions">
+        <button id="splitYes"></button>
+        <button id="splitNo" class="ghost">Send as one block</button>
+        <button id="splitEdit" class="ghost">Edit</button>
+      </div>
+      <div class="split-keys">Enter = split · Esc = back to editing</div>
+    </div>
     <footer class="composer">
-      <button id="attachBtn" class="icon-btn ghost" title="Send a photo or file" aria-label="Attach a file">
+      <button id="attachBtn" class="icon-btn ghost" title="Send photos or files (you can also paste or drop them)" aria-label="Attach files">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 11-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2L9.8 17a1.8 1.8 0 0 1-2.6-2.6l8-8"/></svg>
       </button>
-      <input type="file" id="fileInput" class="hidden">
-      <input type="text" id="msgInput" placeholder="Type a message…" autocomplete="off" maxlength="4000">
+      <input type="file" id="fileInput" class="hidden" multiple>
+      <!-- textarea (not <input>) so pasted commands keep their line breaks and indentation;
+           autocorrect/capitalisation off so phones don't turn "git pull" into "Git pull" -->
+      <textarea id="msgInput" rows="1" placeholder="Message or command…" maxlength="20000"
+                autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
       <button id="sendBtn" class="icon-btn" title="Send" aria-label="Send">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
       </button>
@@ -544,14 +604,29 @@ function renderInvite() {
   box.classList.toggle('hidden', !box.childNodes.length);
 }
 
-async function copyText(text) {
-  try { await navigator.clipboard.writeText(text); return true; } catch (_) {}
-  // Fallback for plain-http pages (e.g. http://192.168.x.x), where the clipboard API is blocked
-  const ta = el('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-  document.body.append(ta); ta.select();
-  let ok = false; try { ok = document.execCommand('copy'); } catch (_) {}
+// Copy exactly `text`. On plain-http pages (offline mode: http://192.168.x.x) browsers block the
+// Clipboard API, so we use the classic hidden-textarea copy, run synchronously inside the tap.
+function legacyCopy(text) {
+  const active = document.activeElement;
+  const ta = el('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');                       // no keyboard pop-up on phones
+  Object.assign(ta.style, { position: 'fixed', top: '0', left: '0', width: '1px', height: '1px', opacity: '0', fontSize: '16px' });
+  document.body.append(ta);
+  ta.focus({ preventScroll: true });
+  ta.select();
+  ta.setSelectionRange(0, text.length);                  // iOS Safari needs an explicit range
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (_) {}
   ta.remove();
+  if (active && active.focus) active.focus({ preventScroll: true });
   return ok;
+}
+
+async function copyText(text) {
+  if (!window.isSecureContext || !navigator.clipboard || !navigator.clipboard.writeText) return legacyCopy(text);
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (_) { return legacyCopy(text); }
 }
 
 /* ===================== Screens ===================== */
@@ -571,6 +646,9 @@ function backHome(statusText, isErr) {
   clearTimeout(joinTimer);
   const keepCode = role === 'guest' ? roomCode : null;   // so "try again" is one tap
   teardown();
+  pendingSplit = null;
+  $('#splitBar').classList.add('hidden');
+  $('#msgInput').value = ''; $('#msgInput').style.height = '';
   if (keepCode) $('#codeInput').value = keepCode;
   $('#chat').classList.add('hidden');
   $('#home').classList.remove('hidden');
@@ -611,18 +689,86 @@ function sys(text) {
   box.scrollTop = box.scrollHeight;
 }
 
+/* ---------- commands, links, copy ---------- */
+// Looks like a command / code: keep exact spacing in a monospace block (no wrapping, scrolls sideways).
+// (Plain-English words like "set", "make", "go", "start", "ping" are left out on purpose,
+//  so ordinary chat such as "go home now" is not shown as code.)
+const CMD_START = new RegExp('^(\\$ |PS [A-Za-z]:\\\\|(sudo|git|cd|ls|dir|pwd|python3?|py|pip3?|conda|npm|npx|node|yarn|pnpm|bun|deno|'
+  + 'curl|wget|ssh|scp|rsync|docker|podman|kubectl|helm|echo|export|setx|mkdir|rmdir|rm|cp|mv|chmod|chown|nano|vim?|'
+  + 'apt(-get)?|dnf|yum|pacman|brew|winget|choco|scoop|powershell|pwsh|java|javac|mvn|gradle|gcc|g\\+\\+|cmake|cargo|rustc|'
+  + 'flutter|dart|adb|fastboot|tracert|traceroute|ipconfig|ifconfig|netstat|nslookup|systemctl|journalctl|tar|unzip|'
+  + 'taskkill|tasklist|'
+  + '(Get|Set|New|Remove|Start|Stop|Restart|Invoke|Test|Select|Where|ForEach|Import|Export|Add|Clear|Copy|Move|Rename|'
+  + 'Out|Write|Read|Enable|Disable|Install|Uninstall|Update|Format|Measure|Sort|Resolve|Expand|Compress)-[A-Z]\\w+)(\\s|$))');
+function isCodeLike(text) {
+  if (/^https?:\/\/\S+$/.test(text.trim())) return false;   // a lone link stays a clickable link
+  return text.includes('\n') || /^[ \t]/.test(text) || text.includes('\t') || CMD_START.test(text)
+      || /(&&|\|\||\s\|\s|\s--?[A-Za-z][\w-]*=?)/.test(text);
+}
+
+// Plain text with clickable http(s) links (built from text nodes, never innerHTML).
+function linkify(parent, text) {
+  const re = /https?:\/\/[^\s<>"']+/g;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    let url = m[0];
+    const trail = url.match(/[.,;:!?)\]}'"]+$/);          // don't swallow sentence punctuation
+    if (trail) url = url.slice(0, -trail[0].length);
+    parent.append(text.slice(last, m.index));
+    const a = el('a', 'lnk', url);
+    a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    parent.append(a);
+    last = m.index + url.length;
+    re.lastIndex = last;
+  }
+  parent.append(text.slice(last));
+}
+
+const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
+const ICON_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+function copyButton(getText) {
+  const b = el('button', 'copy-btn');
+  b.type = 'button'; b.title = 'Copy'; b.setAttribute('aria-label', 'Copy message');
+  b.innerHTML = ICON_COPY;                                 // static icon markup only
+  b.onclick = async () => {
+    const ok = await copyText(getText());
+    b.innerHTML = ok ? ICON_OK : ICON_COPY;
+    b.classList.toggle('done', ok);
+    toast(ok ? 'Copied' : 'Copy failed — long-press the text to select it');
+    setTimeout(() => { b.innerHTML = ICON_COPY; b.classList.remove('done'); }, 1500);
+  };
+  return b;
+}
+
 function showMessage(m, mine) {
   const box = $('#messages');
   const row = el('div', 'msg' + (mine ? ' mine' : ''));
   row.dataset.id = m.id;
+  row.dataset.from = mine ? '__me' : String(m.from || m.name);
+  row.dataset.ts = m.ts || Date.now();
+  // Group consecutive messages from the same person (e.g. a split command list)
+  const prev = box.lastElementChild;
+  if (prev && prev.classList.contains('msg') && prev.dataset.from === row.dataset.from
+      && Math.abs(row.dataset.ts - prev.dataset.ts) < 120000) row.classList.add('cont');
   if (!mine) row.append(avatarEl(m.name));
   const body = el('div', 'body');
   if (!mine) body.append(el('div', 'who', cleanName(m.name)));
   const bubble = el('div', 'bubble');
+  const line = el('div', 'bubble-row');
 
   if (m.type === 'msg') {
-    bubble.textContent = String(m.text || '');
+    const text = String(m.text || '');
+    if (isCodeLike(text)) {
+      bubble.classList.add('code');
+      const pre = el('pre'); pre.textContent = text;       // exact characters, exact alignment
+      bubble.append(pre);
+    } else {
+      bubble.style.whiteSpace = 'pre-wrap';
+      linkify(bubble, text);
+    }
+    line.append(bubble, copyButton(() => text));
   } else if (m.type === 'file') {
+    line.append(bubble);
     const blob = new Blob([m.data], { type: m.mime || 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     if (/^image\//.test(m.mime || '')) {
@@ -635,7 +781,7 @@ function showMessage(m, mine) {
       bubble.append(a);
     }
   }
-  body.append(bubble);
+  body.append(line);
 
   const meta = el('div', 'meta', fmtTime(m.ts || Date.now()));
   if (mine) { const t = el('span', 'tick', ' · sending'); meta.append(t); }
@@ -894,15 +1040,98 @@ function deliver(m) {
   else toast('Not connected');
 }
 
-function sendText() {
-  const input = $('#msgInput');
-  const text = input.value.trim();
-  if (!text) return;
+// Keep the text exactly as typed/pasted: only normalise line endings and drop blank lines
+// at the very start and end. Leading spaces/indentation are NOT trimmed.
+function normalizeText(raw) {
+  const t = raw.replace(/\r\n?/g, '\n').replace(/^(?:[ \t]*\n)+/, '').replace(/(?:\n[ \t]*)+$/, '');
+  return t.trim() ? t : '';
+}
+
+// Split a pasted block into one message per command:
+//  * blank lines are dropped
+//  * a line ending in \ (bash), ` (PowerShell) or ^ (cmd) continues onto the next line
+//  * an indented line belongs to the line above (multi-line scripts, YAML, Python blocks)
+function splitPieces(text) {
+  const lines = text.split('\n');
+  const indents = lines.filter(l => l.trim()).map(l => l.match(/^[ \t]*/)[0].length);
+  const common = Math.min(...indents);                     // remove indentation shared by every line
+  const pieces = [];
+  let cur = null, continues = false;
+  for (const raw of lines) {
+    if (!raw.trim()) { if (!continues) cur = null; continue; }
+    const line = raw.slice(common);
+    const closesBlock = /^(done|fi|esac|else|elif|then|do|end|catch|finally|[}\])])(\W|$)/.test(line);
+    if (cur !== null && (continues || closesBlock || /^[ \t]/.test(line))) cur.push(line);
+    else { cur = [line]; pieces.push(cur); }
+    continues = /[\\`^]\s*$/.test(line);
+  }
+  return pieces.map(p => p.join('\n'));
+}
+
+function sendOne(text) {
   const m = { type: 'msg', id: uid(), from: myId, name: myName, text, ts: Date.now() };
   showMessage(m, true);
   deliver(m);
+}
+
+function clearComposer() {
+  const input = $('#msgInput');
   input.value = '';
+  fitComposer();
   input.focus();
+}
+
+let pendingSplit = null;                                    // { text, pieces } while the split bar is open
+
+function sendText() {
+  if (pendingSplit) return confirmSplit(true);
+  const text = normalizeText($('#msgInput').value);
+  if (!text) return;
+  const pieces = text.includes('\n') ? splitPieces(text) : [text];
+  if (pieces.length > 1) return openSplit(text, pieces);   // ask first
+  sendOne(text);
+  clearComposer();
+}
+
+function openSplit(text, pieces) {
+  pendingSplit = { text, pieces };
+  $('#splitTitle').textContent = `Your message has ${pieces.length} commands / lines`;
+  $('#splitSub').textContent = 'Send each one as its own message, so it can be copied and run separately?';
+  $('#splitYes').textContent = `Split into ${pieces.length} messages`;
+  const list = $('#splitPreview'); list.innerHTML = '';
+  pieces.forEach(p => list.append(el('li', null, p.includes('\n') ? p.split('\n')[0] + '  …' : p)));
+  $('#splitBar').classList.remove('hidden');
+  $('#splitYes').focus({ preventScroll: true });
+  $('#messages').scrollTop = $('#messages').scrollHeight;
+}
+
+function closeSplit(refocus = true) {
+  pendingSplit = null;
+  $('#splitBar').classList.add('hidden');
+  if (refocus) $('#msgInput').focus();
+}
+
+async function confirmSplit(split) {
+  const p = pendingSplit;
+  if (!p) return;
+  closeSplit(false);
+  if (split) {
+    for (const piece of p.pieces) { sendOne(piece); await new Promise(r => setTimeout(r, 40)); }
+  } else sendOne(p.text);
+  clearComposer();
+}
+
+// Grow the box with its content (up to 40% of the screen); monospace once it looks like code.
+function fitComposer() {
+  const input = $('#msgInput');
+  input.classList.toggle('code', isCodeLike(input.value) && input.value.trim() !== '');
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight + 2, window.innerHeight * 0.4) + 'px';
+}
+
+// Photos from the clipboard or dragged onto the chat
+function sendFiles(files) {
+  [...files].forEach(f => sendFile(f));
 }
 
 async function sendFile(file) {
@@ -957,11 +1186,33 @@ $('#codeInput').addEventListener('input', e => { e.target.value = e.target.value
 $('#codeInput').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom(); });
 $('#nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') ($('#codeInput').value.length === 6 ? joinRoom() : createRoom()); });
 
+// Enter sends on a computer (Shift+Enter = new line). On phones Enter adds a new line; use the Send button.
+const TOUCH = matchMedia('(pointer: coarse)').matches;
 $('#sendBtn').onclick = sendText;
-$('#msgInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); } });
-$('#msgInput').addEventListener('input', sendTyping);
+$('#msgInput').addEventListener('keydown', e => {
+  if (pendingSplit) {
+    if (e.key === 'Enter') { e.preventDefault(); confirmSplit(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeSplit(); }
+    return;
+  }
+  if (e.key === 'Enter' && !e.shiftKey && !TOUCH && !e.isComposing) { e.preventDefault(); sendText(); }
+});
+$('#msgInput').addEventListener('input', () => { if (pendingSplit) closeSplit(); fitComposer(); sendTyping(); });
+$('#msgInput').addEventListener('paste', e => {
+  const files = [...(e.clipboardData && e.clipboardData.files || [])];
+  if (files.length && !e.clipboardData.getData('text')) { e.preventDefault(); sendFiles(files); toast(files.length > 1 ? `Sending ${files.length} files` : 'Sending pasted image'); }
+  else setTimeout(fitComposer, 0);
+});
+$('#splitYes').onclick = () => confirmSplit(true);
+$('#splitNo').onclick = () => confirmSplit(false);
+$('#splitEdit').onclick = () => closeSplit();
+$('#splitBar').addEventListener('keydown', e => { if (e.key === 'Escape') closeSplit(); });
 $('#attachBtn').onclick = () => $('#fileInput').click();
-$('#fileInput').onchange = e => { sendFile(e.target.files[0]); e.target.value = ''; };
+$('#fileInput').onchange = e => { sendFiles(e.target.files); e.target.value = ''; };
+const msgBox = $('#messages');
+msgBox.addEventListener('dragover', e => { if (role && e.dataTransfer.types.includes('Files')) { e.preventDefault(); msgBox.classList.add('drop'); } });
+msgBox.addEventListener('dragleave', () => msgBox.classList.remove('drop'));
+msgBox.addEventListener('drop', e => { msgBox.classList.remove('drop'); if (e.dataTransfer.files.length) { e.preventDefault(); sendFiles(e.dataTransfer.files); } });
 
 $('#leaveBtn').onclick = leave;
 $('#lockBtn').onclick = toggleLock;
